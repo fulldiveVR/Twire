@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="hello_world">Hello world</string>
-    <string name="app_name" translatable="false">Twire</string>
+    <string name="app_name" translatable="false">CryptoTwitch for Twitch</string>
     <string name="app_slogan"> </string>
-    <string name="app_id" translatable="false">com.perflyst.twire</string>
+    <string name="app_id" translatable="false">com.fulldive.cryptotwitch</string>
 
     <string name="ok">OK</string>
     <string name="done">DONE</string>
@@ -101,7 +101,7 @@
     <string name="stream_chromecast_playing">Playing on %s…</string>
     <string name="stream_chromecast_failed">Something went wrong playing on %s</string>
     <string name="stream_chromecast_no_vod">Sorry, video-on-demand is currently not supported for chromecasting</string>
-    <string name="stream_chromecast_connection_failed">Twire could not connect to %s</string>
+    <string name="stream_chromecast_connection_failed">CryptoTwitch for Twitch could not connect to %s</string>
     <string name="stream_chromecast_connecting">Connecting…</string>
     <string name="stream_no_audio_only">Sorry, audio-only is not available for this stream</string>
     <string name="stream_audio_only_active">Playing audio only</string>
@@ -210,18 +210,18 @@
     <string name="streams_adapter_viewers">viewers</string>
 
     <!-- Welcome Activity -->
-    <string name="title_activity_welcome">Twire setup</string>
+    <string name="title_activity_welcome">CryptoTwitch for Twitch setup</string>
     <string name="welcome_text_line_one">Welcome to</string>
-    <string name="welcome_text_line_two">Twire</string>
+    <string name="welcome_text_line_two">CryptoTwitch for Twitch</string>
     <string name="welcome_text_line_three">@string/app_slogan</string>
 
     <!-- Login Activity-->
     <string name="title_activity_login">@string/title_activity_welcome</string>
     <string name="login_text_line_one">Let\'s get you set up!</string>
     <string name="login_text_line_two">First, sign into Twitch.</string>
-    <string name="login_user_cancel">You need to log in to use Twire, though…</string>
+    <string name="login_user_cancel">You need to log in to use CryptoTwitch for Twitch, though…</string>
     <string name="login_user_cancel_action">GOT IT</string>
-    <string name="login_user_no_internet">You\'ll need an internet connection to set up Twire.</string>
+    <string name="login_user_no_internet">You\'ll need an internet connection to set up CryptoTwitch for Twitch.</string>
     <string name="login_user_no_internet_action">TRY AGAIN</string>
     <string name="login_on_success_message">Hello, %s</string>
     <string name="login_intent_part_of_setup">login_intent_part_of_setup</string>

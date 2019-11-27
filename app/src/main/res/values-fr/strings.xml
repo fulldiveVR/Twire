@@ -98,7 +98,7 @@
     <string name="stream_chromecast_playing">Diffusé sur %s</string>
     <string name="stream_chromecast_failed">Un problème est survenu en diffusant sur %s</string>
     <string name="stream_chromecast_no_vod">Désolé, la lecture des rediffusions par Chromecast  n\'est actuellement pas pris en charge</string>
-    <string name="stream_chromecast_connection_failed">Twire n\'a pas pu se connecter à %s</string>
+    <string name="stream_chromecast_connection_failed">CryptoTwitch for Twitch n\'a pas pu se connecter à %s</string>
     <string name="stream_chromecast_connecting">Connexion…</string>
     <string name="stream_no_audio_only">Désolé, la lecture en audio uniquement n\'est pas disponible pour ce stream</string>
     <string name="stream_audio_only_active">Lecture audio uniquement</string>
@@ -201,18 +201,18 @@
     <string name="streams_adapter_viewers">spectateurs</string>
 
     <!-- Welcome Activity -->
-    <string name="title_activity_welcome">Configuration de Twire</string>
+    <string name="title_activity_welcome">Configuration de CryptoTwitch for Twitch</string>
     <string name="welcome_text_line_one">Bienvenue sur</string>
-    <string name="welcome_text_line_two">Twire</string>
+    <string name="welcome_text_line_two">CryptoTwitch for Twitch</string>
     <string name="welcome_text_line_three">@string/app_slogan</string>
 
     <!-- Login Activity-->
     <string name="title_activity_login">@string/title_activity_welcome</string>
     <string name="login_text_line_one">Allons-y !</string>
     <string name="login_text_line_two">Tout d\'abord, connectez-vous à Twitch</string>
-    <string name="login_user_cancel">Vous devez vous connecter pour utiliser Twire</string>
+    <string name="login_user_cancel">Vous devez vous connecter pour utiliser CryptoTwitch for Twitch</string>
     <string name="login_user_cancel_action">COMPRIS</string>
-    <string name="login_user_no_internet">Vous aurez besoin d\'une connexion internet pour configurer Twire</string>
+    <string name="login_user_no_internet">Vous aurez besoin d\'une connexion internet pour configurer CryptoTwitch for Twitch</string>
     <string name="login_user_no_internet_action">NOUVEL ESSAI</string>
     <string name="login_on_success_message">Bonjour %s</string>
     <string name="login_intent_part_of_setup">login_intent_part_of_setup</string>

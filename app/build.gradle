@@ -4,7 +4,7 @@ android {
     compileSdkVersion 28
 
     defaultConfig {
-        applicationId "com.perflyst.twire"
+        applicationId "com.fulldive.cryptotwitch"
         minSdkVersion 16
         targetSdkVersion 28
         versionCode 507
