@@ -9,6 +9,8 @@ import android.os.Build;
 import androidx.multidex.MultiDex;
 import androidx.multidex.MultiDexApplication;
 
+import com.fulldive.eventsender.lib.EventSender;
+
 /**
  * Created by SebastianRask on 20-02-2016.
  */
@@ -23,6 +25,8 @@ public class TwireApplication extends MultiDexApplication {
         mContext = this.getApplicationContext();
 
         initNotificationChannels();
+
+        EventSender.getInstance(this);  // initialize
     }
 
     @Override

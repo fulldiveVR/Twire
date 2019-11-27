@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import com.fulldive.eventsender.lib.EventSender;
 import com.perflyst.twire.R;
 import com.perflyst.twire.activities.ThemeActivity;
 import com.perflyst.twire.adapters.MainActivityAdapter;
@@ -167,6 +168,18 @@ public abstract class MainActivity extends ThemeActivity {
 
         checkForTip();
         customizeActivity();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        EventSender.getInstance(getApplicationContext()).onStart(this);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        EventSender.getInstance(getApplicationContext()).onStop(this);
     }
 
     @Override
