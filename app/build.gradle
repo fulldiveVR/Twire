@@ -9,7 +9,7 @@ android {
     compileSdkVersion 28
 
     defaultConfig {
-        applicationId "com.fulldive.cryptotwitch"
+        applicationId "com.embassource.cryptotwitch"
         minSdkVersion 16
         targetSdkVersion 28
         versionCode 507
