@@ -153,7 +153,7 @@
     <!-- Twire Icon -->
     <dimen name="welcome_icon_container_size">155dp</dimen>
     <dimen name="welcome_icon_size">135dp</dimen>
-    <dimen name="welcome_icon_center_size">30dp</dimen>
+    <dimen name="welcome_icon_center_size">14dp</dimen>
     <dimen name="welcome_icon_margin_top">50dp</dimen>
 
     <!-- Login Activity -->
