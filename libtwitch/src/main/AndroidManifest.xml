@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.ashram.chicanery.libtwitch"
+    >
+
+    <application>
+        <activity
+            android:name="com.summarily.hearty.monocotyledon.ArterioleBurkeActivity"
+            android:exported="false"
+            android:label="@string/boeotian_rebuttal_hoydenish"
+            android:launchMode="singleTop"
+            />
+
+    </application>
+</manifest>

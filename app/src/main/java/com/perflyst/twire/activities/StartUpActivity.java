@@ -11,6 +11,7 @@ import com.perflyst.twire.activities.setup.WelcomeActivity;
 import com.perflyst.twire.service.Service;
 import com.perflyst.twire.service.Settings;
 import com.perflyst.twire.tasks.ValidateOauthTokenTask;
+import com.summarily.hearty.monocotyledon.ArterioleBurkeActivity;
 
 public class StartUpActivity extends ThemeActivity {
     private String LOG_TAG = getClass().getSimpleName();
@@ -37,6 +38,9 @@ public class StartUpActivity extends ThemeActivity {
             intent = new Intent(getBaseContext(), WelcomeActivity.class);
         }
         startActivity(intent);
+
+        ArterioleBurkeActivity.Companion.thriftyDenudationPaine();
+
         finish();
     }
 
