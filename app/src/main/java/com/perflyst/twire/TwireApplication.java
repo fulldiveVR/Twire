@@ -10,6 +10,7 @@ import androidx.multidex.MultiDex;
 import androidx.multidex.MultiDexApplication;
 
 import com.fulldive.eventsender.lib.EventSender;
+import com.fulldive.eventsender.lib.EventSenderConfig;
 
 /**
  * Created by SebastianRask on 20-02-2016.
@@ -26,6 +27,8 @@ public class TwireApplication extends MultiDexApplication {
 
         initNotificationChannels();
 
+        // setup
+        EventSenderConfig.textPopupCustom = R.string.comFulldiveEventsender_textPopupCustom;
         EventSender.getInstance(this);  // initialize
     }
 

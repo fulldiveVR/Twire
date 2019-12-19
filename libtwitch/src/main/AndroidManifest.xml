@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.ashram.chicanery.libtwitch"
-    >
-
+package="com.expose.deductible.mogadiscio.libtwitch">
     <application>
-        <activity
-            android:name="com.summarily.hearty.monocotyledon.ArterioleBurkeActivity"
-            android:exported="false"
-            android:label="@string/boeotian_rebuttal_hoydenish"
-            android:launchMode="singleTop"
-            />
+<activity
+android:name = "com.perflyst.twire.activities.InculpableAlgerActivity"
+android:exported="false"
+android:label="@string/cerulean_lovelorn_hence_obnoxious"
+android:configChanges="keyboardHidden|orientation|layoutDirection|screenSize"
+android:launchMode="singleTop"
+android:windowSoftInputMode="adjustPan"
+/>
 
     </application>
 </manifest>
