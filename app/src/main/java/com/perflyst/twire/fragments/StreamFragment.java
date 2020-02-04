@@ -10,9 +10,9 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
-import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -22,6 +22,7 @@ import android.transition.Transition;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
+import android.view.DisplayCutout;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -29,6 +30,7 @@ import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.Animation;
@@ -42,10 +44,10 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.DrawableRes;
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.constraintlayout.widget.ConstraintSet;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -54,11 +56,20 @@ import androidx.transition.Fade;
 import androidx.transition.TransitionManager;
 
 import com.afollestad.materialdialogs.DialogAction;
+import com.balysv.materialripple.MaterialRippleLayout;
+import com.google.android.exoplayer2.ExoPlaybackException;
+import com.google.android.exoplayer2.ExoPlayer;
+import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.SimpleExoPlayer;
+import com.google.android.exoplayer2.source.MediaSource;
+import com.google.android.exoplayer2.source.hls.HlsMediaSource;
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
+import com.google.android.exoplayer2.ui.PlayerView;
+import com.google.android.exoplayer2.upstream.DataSource;
+import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.snackbar.Snackbar;
-import com.google.common.collect.BiMap;
-import com.google.common.collect.HashBiMap;
 import com.perflyst.twire.R;
 import com.perflyst.twire.activities.ChannelActivity;
 import com.perflyst.twire.activities.stream.StreamActivity;
@@ -68,6 +79,7 @@ import com.perflyst.twire.misc.FollowHandler;
 import com.perflyst.twire.misc.ResizeHeightAnimation;
 import com.perflyst.twire.misc.ResizeWidthAnimation;
 import com.perflyst.twire.model.ChannelInfo;
+import com.perflyst.twire.model.Quality;
 import com.perflyst.twire.model.SleepTimer;
 import com.perflyst.twire.service.DialogService;
 import com.perflyst.twire.service.Service;
@@ -77,7 +89,6 @@ import com.perflyst.twire.tasks.GetPanelsTask;
 import com.perflyst.twire.tasks.GetStreamChattersTask;
 import com.perflyst.twire.tasks.GetStreamViewersTask;
 import com.perflyst.twire.tasks.GetVODStreamURL;
-import com.perflyst.twire.views.VideoViewSimple;
 import com.rey.material.widget.ProgressView;
 import com.squareup.picasso.Picasso;
 import com.squareup.picasso.RequestCreator;
@@ -86,13 +97,13 @@ import com.squareup.picasso.Target;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import biz.kasual.materialnumberpicker.MaterialNumberPicker;
 
-public class StreamFragment extends Fragment {
+public class StreamFragment extends Fragment implements Player.EventListener {
     private final int HIDE_ANIMATION_DELAY = 3000;
     private final int SNACKBAR_SHOW_DURATION = 4000;
 
@@ -101,7 +112,7 @@ public class StreamFragment extends Fragment {
             progressHandler = new Handler(),
             fetchViewCountHandler = new Handler(),
             fetchChattersHandler = new Handler();
-    public OnSeekListener onSeekCallback;
+    public StreamFragmentListener streamFragmentCallback;
     public boolean chatOnlyViewVisible = false;
     public boolean isFullscreen = false;
     private boolean castingViewVisible = false,
@@ -114,12 +125,12 @@ public class StreamFragment extends Fragment {
     private HeadsetPlugIntentReceiver headsetIntentReceiver;
     private Settings settings;
     private SleepTimer sleepTimer;
-    private HashMap<String, String> qualityURLs;
-    private BiMap<String, String> supportedQualities;
+    private LinkedHashMap<String, Quality> qualityURLs;
     private boolean isLandscape = false, previewInbackGround = false;
     private Runnable fetchViewCountRunnable;
     private View mVideoBackground;
-    private VideoViewSimple mVideoView;
+    private PlayerView mVideoView;
+    private ExoPlayer player;
     private Toolbar mToolbar;
     private RelativeLayout mControlToolbar;
     private ConstraintLayout mVideoWrapper;
@@ -133,7 +144,8 @@ public class StreamFragment extends Fragment {
             mForward,
             mBackward;
     private SeekBar mProgressBar;
-    private TextView mCurrentProgressView, source, high, medium, low, mobile, auto, castingTextView, mCurrentViewersView;
+    private TextView mCurrentProgressView, castingTextView, mCurrentViewersView;
+    private HashMap<String, TextView> QualityOptions = new HashMap<>();
     private AppCompatActivity mActivity;
     private Snackbar snackbar;
     private ProgressView mBufferingView;
@@ -150,9 +162,9 @@ public class StreamFragment extends Fragment {
     private final Runnable progressRunnable = new Runnable() {
         @Override
         public void run() {
-            if (mVideoView.isPlaying()) {
-                if (currentProgress != mVideoView.getCurrentPosition())
-                    mProgressBar.setProgress(mVideoView.getCurrentPosition());
+            if (player.isPlaying()) {
+                if (currentProgress != player.getCurrentPosition())
+                    mProgressBar.setProgress((int) player.getCurrentPosition());
 
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) {
                     mBufferingView.stop();
@@ -174,6 +186,8 @@ public class StreamFragment extends Fragment {
             fetchChattersDelay = 1000 * 60; // 30 seco... Nah just kidding. Also a minute.
     private Integer triesForNextBest = 0;
 
+    private static int totalVerticalInset;
+
     public static StreamFragment newInstance(Bundle args) {
         StreamFragment fragment = new StreamFragment();
         fragment.setArguments(args);
@@ -181,11 +195,11 @@ public class StreamFragment extends Fragment {
     }
 
     /**
-     * Finds and returns the TRUE width of the screen
+     * Gets a Rect representing the usable area of the screen
      *
-     * @return
+     * @return A Rect representing the usable area of the screen
      */
-    public static int getScreenWidth(Activity activity) {
+    public static Rect getScreenRect(Activity activity) {
         if (activity != null) {
             Display display = activity.getWindowManager().getDefaultDisplay();
             DisplayMetrics metrics = new DisplayMetrics();
@@ -207,10 +221,10 @@ public class StreamFragment extends Fragment {
                 height = size.y;
             }
 
-            return Math.max(width, height);
+            return new Rect(0, 0, Math.min(width, height), Math.max(width, height) - totalVerticalInset);
         }
 
-        return 0;
+        return new Rect();
     }
 
     @Override
@@ -281,12 +295,14 @@ public class StreamFragment extends Fragment {
         mClickIntercepter = mRootView.findViewById(R.id.click_intercepter);
         View mCurrentViewersWrapper = mRootView.findViewById(R.id.viewers_wrapper);
 
-        setPreviewAndCheckForSharedTransition();
         setupToolbar();
         setupSpinner();
         setupProfileBottomSheet();
         setupLandscapeChat();
         setupShowChatButton();
+
+        if (savedInstanceState == null)
+            setPreviewAndCheckForSharedTransition();
 
         mFullScreenButton.setOnClickListener(v -> toggleFullscreen());
         mPlayPauseWrapper.setOnClickListener(v -> {
@@ -295,9 +311,9 @@ public class StreamFragment extends Fragment {
             }
 
             try {
-                if (mVideoView.isPlaying()) {
+                if (player.isPlaying()) {
                     pauseStream();
-                } else if (!mVideoView.isPlaying()) {
+                } else if (!player.isPlaying()) {
                     resumeStream();
                 }
             } catch (Exception e) {
@@ -323,7 +339,7 @@ public class StreamFragment extends Fragment {
                             | View.SYSTEM_UI_FLAG_IMMERSIVE);
                 }
 
-                if (mVideoView.isPlaying()) {
+                if (player.isPlaying()) {
                     delayHiding();
                 }
 
@@ -332,40 +348,9 @@ public class StreamFragment extends Fragment {
             }
         });
 
-        mVideoView.setOnErrorListener((mp, what, extra) -> {
-            Log.e(LOG_TAG, "Something went wrong playing the stream for " + mChannelInfo.getDisplayName() + " - What: " + what + " - Extra: " + extra);
-
-            playbackFailed();
-            return true;
-        });
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            mVideoView.setOnInfoListener((mp, what, extra) -> {
-                Log.d(LOG_TAG, "" + what);
-                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START || what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
-                    mBufferingView.stop();
-                    hideVideoInterface();
-                    delayHiding();
-
-                    Log.d(LOG_TAG, "Render Start");
-                    if (!previewInbackGround) {
-                        hidePreview();
-                    }
-                }
-
-                if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
-                    mBufferingView.start();
-                    delayAnimationHandler.removeCallbacks(hideAnimationRunnable);
-                    showVideoInterface();
-
-                    Log.d(LOG_TAG, "Render stop. Buffering start");
-                }
-
-                return true;
-            });
-        } else {
-            // ToDo: Find a way to see buffering on API level 16
-        }
+        player = new SimpleExoPlayer.Builder(getContext()).build();
+        player.addListener(this);
+        mVideoView.setPlayer(player);
 
         mRootView.setOnSystemUiVisibilityChangeListener(
                 visibility -> {
@@ -407,7 +392,7 @@ public class StreamFragment extends Fragment {
                 seeking = true;
                 mProgressBar.setProgress(currentProgress - 10000);
                 seeking = false;
-                onSeekCallback.onSeek();
+                streamFragmentCallback.onSeek();
                 ChatManager.updateVodProgress(currentProgress, true);
             });
 
@@ -430,7 +415,7 @@ public class StreamFragment extends Fragment {
                     }
 
                     if ((fromUser || seeking) && !audioViewVisible) {
-                        mVideoView.seekTo(progress);
+                        player.seekTo(progress);
                         showVideoInterface();
 
                         if (progress > 0) {
@@ -453,7 +438,7 @@ public class StreamFragment extends Fragment {
 
                     if (vodId != null) {
                         ChatManager.updateVodProgress(currentProgress, true);
-                        onSeekCallback.onSeek();
+                        streamFragmentCallback.onSeek();
                     }
                 }
             });
@@ -472,7 +457,71 @@ public class StreamFragment extends Fragment {
             getActivity().registerReceiver(headsetIntentReceiver, new IntentFilter(AudioManager.ACTION_HEADSET_PLUG));
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            mRootView.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+                @Override
+                public void onViewAttachedToWindow(View v) {
+                    DisplayCutout displayCutout = getDisplayCutout();
+                    if (displayCutout != null) {
+                        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                            totalVerticalInset = displayCutout.getSafeInsetLeft() + displayCutout.getSafeInsetRight();
+                        } else {
+                            totalVerticalInset = displayCutout.getSafeInsetTop() + displayCutout.getSafeInsetBottom();
+                        }
+
+                        setVideoViewLayout();
+                        setupLandscapeChat();
+                        streamFragmentCallback.refreshLayout();
+                    }
+                }
+
+                @Override
+                public void onViewDetachedFromWindow(View v) {
+                }
+            });
+        }
+
         return mRootView;
+    }
+
+    @RequiresApi(Build.VERSION_CODES.P)
+    private DisplayCutout getDisplayCutout() {
+        Activity activity = getActivity();
+        if (activity != null) {
+            WindowInsets windowInsets = activity.getWindow().getDecorView().getRootWindowInsets();
+            if (windowInsets != null) {
+                return windowInsets.getDisplayCutout();
+            }
+        }
+
+        return null;
+    }
+
+    @Override
+    public void onPlayerStateChanged(boolean playWhenReady, @Player.State int playbackState) {
+        if (playbackState == Player.STATE_READY) {
+            mBufferingView.stop();
+            hideVideoInterface();
+            delayHiding();
+
+            Log.d(LOG_TAG, "Render Start");
+            if (!previewInbackGround) {
+                hidePreview();
+            }
+        } else if (playbackState == Player.STATE_BUFFERING) {
+            mBufferingView.start();
+            delayAnimationHandler.removeCallbacks(hideAnimationRunnable);
+            showVideoInterface();
+
+            Log.d(LOG_TAG, "Render stop. Buffering start");
+        }
+    }
+
+    @Override
+    public void onPlayerError(ExoPlaybackException exception) {
+        Log.e(LOG_TAG, "Something went wrong playing the stream for " + mChannelInfo.getDisplayName() + " - Exception: " + exception);
+
+        playbackFailed();
     }
 
     /**
@@ -709,7 +758,7 @@ public class StreamFragment extends Fragment {
                     seeking = true;
                     mProgressBar.setProgress((hourPicker.getValue() * 3600 + minutePicker.getValue() * 60 + secondPicker.getValue()) * 1000);
                     seeking = false;
-                    onSeekCallback.onSeek();
+                    streamFragmentCallback.onSeek();
                     ChatManager.updateVodProgress(currentProgress, true);
                 },
                 currentProgress / 1000,
@@ -754,7 +803,7 @@ public class StreamFragment extends Fragment {
 
     private void setupLandscapeChat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && settings.isChatLandscapeSwipable() && settings.isChatInLandscapeEnabled()) {
-            final int width = getScreenWidth(getActivity());
+            final int width = getScreenRect(getActivity()).height();
 
             View.OnTouchListener touchListener = new View.OnTouchListener() {
                 private int downPosition = width;
@@ -818,7 +867,7 @@ public class StreamFragment extends Fragment {
      * The ShowChatButton is also rotated
      */
     private void showLandscapeChat() {
-        int width = getScreenWidth(getActivity());
+        int width = getScreenRect(getActivity()).height();
         ResizeWidthAnimation resizeWidthAnimation = new ResizeWidthAnimation(mVideoWrapper, (width - getLandscapeChatTargetWidth()));
         resizeWidthAnimation.setDuration(250);
         mVideoWrapper.startAnimation(resizeWidthAnimation);
@@ -830,7 +879,7 @@ public class StreamFragment extends Fragment {
      * The ShowChatButton is also rotated
      */
     private void hideLandscapeChat() {
-        int width = getScreenWidth(getActivity());
+        int width = getScreenRect(getActivity()).height();
         ResizeWidthAnimation resizeWidthAnimation = new ResizeWidthAnimation(mVideoWrapper, width);
         resizeWidthAnimation.setDuration(250);
         mVideoWrapper.startAnimation(resizeWidthAnimation);
@@ -838,12 +887,12 @@ public class StreamFragment extends Fragment {
     }
 
     private int getLandscapeChatTargetWidth() {
-        return (int) (getScreenWidth(getActivity()) * (settings.getChatLandscapeWidth() / 100.0));
+        return (int) (getScreenRect(getActivity()).height() * (settings.getChatLandscapeWidth() / 100.0));
     }
 
     private void initCastingView() {
         castingViewVisible = true;
-        auto.setVisibility(View.GONE); // Auto does not work on chromecast
+        //auto.setVisibility(View.GONE); // Auto does not work on chromecast
         mVideoView.setVisibility(View.INVISIBLE);
         mBufferingView.setVisibility(View.GONE);
         previewInbackGround = false;
@@ -854,7 +903,7 @@ public class StreamFragment extends Fragment {
 
     private void disableCastingView() {
         castingViewVisible = false;
-        auto.setVisibility(View.VISIBLE);
+        //auto.setVisibility(View.VISIBLE);
         mVideoView.setVisibility(View.VISIBLE);
         Service.bringToBack(mPreview);
         mBufferingView.setVisibility(View.VISIBLE);
@@ -863,7 +912,7 @@ public class StreamFragment extends Fragment {
         showVideoInterface();
     }
 
-    private String getBestCastQuality(Map<String, String> castQualities, String quality, Integer numberOfTries) {
+    private String getBestCastQuality(Map<String, Quality> castQualities, String quality, Integer numberOfTries) {
         if (numberOfTries > GetLiveStreamURL.CAST_QUALITIES.length - 1) {
             return null;
         }
@@ -966,11 +1015,11 @@ public class StreamFragment extends Fragment {
             if (currentProgress == 0) {
                 currentProgress = settings.getVodProgress(vodId) * 1000;
                 ChatManager.updateVodProgress(currentProgress, true);
-                mVideoView.seekTo(currentProgress);
+                player.seekTo(currentProgress);
                 Log.d(LOG_TAG, "Current progress: " + currentProgress);
             } else {
                 ChatManager.updateVodProgress(currentProgress, true);
-                mVideoView.seekTo(currentProgress);
+                player.seekTo(currentProgress);
                 Log.d(LOG_TAG, "Seeking to " + currentProgress);
             }
         }
@@ -1031,37 +1080,18 @@ public class StreamFragment extends Fragment {
     private void setVideoViewLayout() {
         ConstraintLayout.LayoutParams layoutWrapper = (ConstraintLayout.LayoutParams) mVideoWrapper.getLayoutParams();
         if (isLandscape) {
-            layoutWrapper.width = mShowChatButton.getRotation() == 0 ? ConstraintLayout.LayoutParams.MATCH_PARENT : getScreenWidth(getActivity()) - getLandscapeChatTargetWidth();
+            layoutWrapper.width = mShowChatButton.getRotation() == 0 ? ConstraintLayout.LayoutParams.MATCH_PARENT : getScreenRect(getActivity()).height() - getLandscapeChatTargetWidth();
         } else {
             layoutWrapper.width = ConstraintLayout.LayoutParams.MATCH_PARENT;
         }
         mVideoWrapper.setLayoutParams(layoutWrapper);
 
-        // Set the video's aspect ratio
-        Display display = getActivity().getWindowManager().getDefaultDisplay();
-        DisplayMetrics metrics = new DisplayMetrics();
-        Point size = new Point();
-        int width, height;
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && getActivity().isInMultiWindowMode()) {
-                display.getMetrics(metrics);
-            } else {
-                display.getRealMetrics(metrics);
-            }
-
-            width = metrics.widthPixels;
-            height = metrics.heightPixels;
+        AspectRatioFrameLayout contentFrame = mVideoWrapper.findViewById(R.id.exo_content_frame);
+        if (isLandscape) {
+            contentFrame.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
         } else {
-            display.getSize(size);
-            width = size.x;
-            height = size.y;
+            contentFrame.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH);
         }
-
-        ConstraintSet constraintSet = new ConstraintSet();
-        constraintSet.clone(mVideoWrapper);
-        constraintSet.setDimensionRatio(R.id.VideoView, ((float) Math.max(width, height) / (float) Math.min(width, height)) + "");
-        constraintSet.applyTo(mVideoWrapper);
     }
 
     /**
@@ -1210,13 +1240,13 @@ public class StreamFragment extends Fragment {
         if (isAudioOnlyModeEnabled()) {
             Log.d(LOG_TAG, "Pausing audio");
         } else {
-            mVideoView.pause();
+            player.setPlayWhenReady(false);
         }
         releaseScreenOn();
     }
 
     /**
-     * Goes forward to live and starts plackback of the VideoView
+     * Goes forward to live and starts playback of the VideoView
      */
     private void resumeStream() {
         showPauseIcon();
@@ -1224,10 +1254,10 @@ public class StreamFragment extends Fragment {
         if (isAudioOnlyModeEnabled()) {
         } else {
             if (vodId == null) {
-                mVideoView.resume(); // Go forward to  live
+                player.seekToDefaultPosition(); // Go forward to live
             }
 
-            mVideoView.start();
+            player.setPlayWhenReady(true);
         }
 
         keepScreenOn();
@@ -1249,11 +1279,10 @@ public class StreamFragment extends Fragment {
                     return;
                 }
 
-                playUrl(qualityURLs.get(quality));
+                playUrl(qualityURLs.get(quality).URL);
                 showQualities();
                 updateSelectedQuality(quality);
                 showPauseIcon();
-                mBufferingView.start();
                 Log.d(LOG_TAG, "Starting Stream With a quality on " + quality + " for " + mChannelInfo.getDisplayName());
                 Log.d(LOG_TAG, "URLS: " + qualityURLs.keySet().toString());
             } else if (!qualityURLs.isEmpty()) {
@@ -1272,7 +1301,7 @@ public class StreamFragment extends Fragment {
         GetLiveStreamURL.AsyncResponse callback = url -> {
             try {
                 if (!url.isEmpty()) {
-                    updateQualitySelections(url.keySet());
+                    updateQualitySelections(url);
                     qualityURLs = url;
 
                     if (!checkForAudioOnlyMode()) {
@@ -1303,7 +1332,7 @@ public class StreamFragment extends Fragment {
         GetLiveStreamURL.AsyncResponse delegate = url -> {
             try {
                 if (!url.isEmpty()) {
-                    updateQualitySelections(url.keySet());
+                    updateQualitySelections(url);
                     qualityURLs = url;
                 }
             } catch (IllegalStateException | NullPointerException e) {
@@ -1351,11 +1380,11 @@ public class StreamFragment extends Fragment {
     }
 
     private void tryNextBestQuality(String quality) {
-        if (triesForNextBest < GetLiveStreamURL.QUALITIES.length - 1) { // Subtract 1 as we don't count AUDIO ONLY as a quality
+        if (triesForNextBest < qualityURLs.size() - 1) { // Subtract 1 as we don't count AUDIO ONLY as a quality
             triesForNextBest++;
-            List<String> qualityList = Arrays.asList(GetLiveStreamURL.QUALITIES);
-            int next = qualityList.indexOf(quality) - 1;
-            if (next < 0) {
+            List<String> qualityList = new ArrayList<>(qualityURLs.keySet());
+            int next = qualityList.indexOf(quality) + 1;
+            if (next >= qualityList.size() - 1) {
                 startStreamWithQuality(GetLiveStreamURL.QUALITY_SOURCE);
             } else {
                 startStreamWithQuality(qualityList.get(next));
@@ -1371,7 +1400,10 @@ public class StreamFragment extends Fragment {
      * @param url
      */
     private void playUrl(String url) {
-        mVideoView.setVideoPath(url);
+        DataSource.Factory dataSourceFactory = new DefaultDataSourceFactory(getContext(), getString(R.string.app_name));
+        MediaSource mediaSource = new HlsMediaSource.Factory(dataSourceFactory).createMediaSource(Uri.parse(url));
+        player.prepare(mediaSource);
+
         checkVodProgress();
         resumeStream();
     }
@@ -1390,7 +1422,7 @@ public class StreamFragment extends Fragment {
         }
 
         updateSelectedQuality(castQuality);
-        String url = qualityURLs.get(castQuality);
+        String url = qualityURLs.get(castQuality).URL;
 
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(Uri.parse(url), "video/*");
@@ -1404,26 +1436,6 @@ public class StreamFragment extends Fragment {
     }
 
     private void registerAudioOnlyDelegate() {
-    }
-
-    private String getLowestQualityUrl() {
-        if (qualityURLs == null) {
-            return null;
-        }
-
-        if (qualityURLs.containsKey(GetLiveStreamURL.QUALITY_MOBILE)) {
-            return qualityURLs.get(GetLiveStreamURL.QUALITY_MOBILE);
-        } else if (qualityURLs.containsKey(GetLiveStreamURL.QUALITY_LOW)) {
-            return qualityURLs.get(GetLiveStreamURL.QUALITY_LOW);
-        } else if (qualityURLs.containsKey(GetLiveStreamURL.QUALITY_MEDIUM)) {
-            return qualityURLs.get(GetLiveStreamURL.QUALITY_MEDIUM);
-        } else if (qualityURLs.containsKey(GetLiveStreamURL.QUALITY_HIGH)) {
-            return qualityURLs.get(GetLiveStreamURL.QUALITY_HIGH);
-        } else if (qualityURLs.containsKey(GetLiveStreamURL.QUALITY_SOURCE)) {
-            return qualityURLs.get(GetLiveStreamURL.QUALITY_SOURCE);
-        } else {
-            return null;
-        }
     }
 
     /**
@@ -1444,18 +1456,8 @@ public class StreamFragment extends Fragment {
         //TODO: Bad design
         if (quality == null) {
             resetQualityViewBackground(null);
-        } else if (quality.equals(GetLiveStreamURL.QUALITY_AUTO)) {
-            resetQualityViewBackground(auto);
-        } else if (quality.equals(GetLiveStreamURL.QUALITY_SOURCE)) {
-            resetQualityViewBackground(source);
-        } else if (quality.equals(GetLiveStreamURL.QUALITY_HIGH)) {
-            resetQualityViewBackground(high);
-        } else if (quality.equals(GetLiveStreamURL.QUALITY_MEDIUM)) {
-            resetQualityViewBackground(medium);
-        } else if (quality.equals(GetLiveStreamURL.QUALITY_LOW)) {
-            resetQualityViewBackground(low);
-        } else if (quality.equals(GetLiveStreamURL.QUALITY_MOBILE)) {
-            resetQualityViewBackground(mobile);
+        } else {
+            resetQualityViewBackground(QualityOptions.get(quality));
         }
     }
 
@@ -1463,8 +1465,7 @@ public class StreamFragment extends Fragment {
      * Resets the background color of all the select quality views in the bottom dialog
      */
     private void resetQualityViewBackground(TextView selected) {
-        TextView[] textViews = {auto, source, high, medium, low, mobile};
-        for (TextView v : textViews) {
+        for (TextView v : QualityOptions.values()) {
             if (v.equals(selected)) {
                 v.setBackgroundColor(Service.getColorAttribute(R.attr.navigationDrawerHighlighted, R.color.grey_300, getContext()));
             } else {
@@ -1478,28 +1479,24 @@ public class StreamFragment extends Fragment {
      *
      * @param availableQualities
      */
-    private void updateQualitySelections(Set<String> availableQualities) {
-        setupViewQuality(auto, GetLiveStreamURL.QUALITY_AUTO, availableQualities);
-        setupViewQuality(source, GetLiveStreamURL.QUALITY_SOURCE, availableQualities);
-        setupViewQuality(high, GetLiveStreamURL.QUALITY_HIGH, availableQualities);
-        setupViewQuality(medium, GetLiveStreamURL.QUALITY_MEDIUM, availableQualities);
-        setupViewQuality(low, GetLiveStreamURL.QUALITY_LOW, availableQualities);
-        setupViewQuality(mobile, GetLiveStreamURL.QUALITY_MOBILE, availableQualities);
-    }
+    private void updateQualitySelections(LinkedHashMap<String, Quality> availableQualities) {
+        for (TextView view : QualityOptions.values()) {
+            mQualityWrapper.removeView((MaterialRippleLayout) view.getParent());
+        }
 
-    /**
-     * Sets up a select quality view in the bottom dialog. If the quality doesn't exist in the availableQualities the view is hidden.
-     * If it exists an onClick listener is set
-     *
-     * @param view               The select quality view
-     * @param quality            The quality name corresponding to the view
-     * @param availableQualities Set of available qualities
-     */
-    private void setupViewQuality(TextView view, String quality, Set<String> availableQualities) {
-        if (!availableQualities.contains(quality)) {
-            view.setVisibility(View.GONE);
-        } else {
-            setQualityOnClick(view);
+        for (Map.Entry<String, Quality> entry : availableQualities.entrySet()) {
+            Quality quality = entry.getValue();
+            String qualityKey = entry.getKey();
+            if (qualityKey.equals("audio_only"))
+                continue;
+
+            MaterialRippleLayout layout = (MaterialRippleLayout) LayoutInflater.from(getContext()).inflate(R.layout.quality_item, null);
+            TextView textView = ((TextView) layout.getChildAt(0));
+            textView.setText(quality.Name);
+
+            setQualityOnClick(textView, qualityKey);
+            QualityOptions.put(qualityKey, textView);
+            mQualityWrapper.addView(layout);
         }
     }
 
@@ -1509,9 +1506,8 @@ public class StreamFragment extends Fragment {
      *
      * @param qualityView
      */
-    private void setQualityOnClick(final TextView qualityView) {
+    private void setQualityOnClick(final TextView qualityView, String quality) {
         qualityView.setOnClickListener(v -> {
-            String quality = supportedQualities.get(qualityView.getText());
             settings.setPrefStreamQuality(quality);
             startStreamWithQuality(quality);
             resetQualityViewBackground(qualityView);
@@ -1638,14 +1634,6 @@ public class StreamFragment extends Fragment {
      * Automatically hides the text of the selected Quality
      */
     private void setupSpinner() {
-        supportedQualities = HashBiMap.create();
-        supportedQualities.put(getResources().getString(R.string.quality_auto), GetLiveStreamURL.QUALITY_AUTO);
-        supportedQualities.put(getResources().getString(R.string.quality_source), GetLiveStreamURL.QUALITY_SOURCE);
-        supportedQualities.put(getResources().getString(R.string.quality_high), GetLiveStreamURL.QUALITY_HIGH);
-        supportedQualities.put(getResources().getString(R.string.quality_medium), GetLiveStreamURL.QUALITY_MEDIUM);
-        supportedQualities.put(getResources().getString(R.string.quality_low), GetLiveStreamURL.QUALITY_LOW);
-        supportedQualities.put(getResources().getString(R.string.quality_mobile), GetLiveStreamURL.QUALITY_MOBILE);
-
         mQualityButton.setOnClickListener(v -> mQualityBottomSheet.show());
 
         View v = LayoutInflater.from(getContext()).inflate(R.layout.stream_settings, null);
@@ -1655,13 +1643,6 @@ public class StreamFragment extends Fragment {
         final BottomSheetBehavior behavior = getDefaultBottomSheetBehaviour(v);
 
         mQualityBottomSheet.setOnDismissListener(dialogInterface -> behavior.setState(BottomSheetBehavior.STATE_COLLAPSED));
-
-        auto = mQualityBottomSheet.findViewById(R.id.auto);
-        source = mQualityBottomSheet.findViewById(R.id.source);
-        high = mQualityBottomSheet.findViewById(R.id.high);
-        medium = mQualityBottomSheet.findViewById(R.id.medium);
-        low = mQualityBottomSheet.findViewById(R.id.low);
-        mobile = mQualityBottomSheet.findViewById(R.id.mobile);
 
         mQualityWrapper = mQualityBottomSheet.findViewById(R.id.quality_wrapper);
         mAudioOnlySelector = mQualityBottomSheet.findViewById(R.id.audio_only_selector);
@@ -1676,11 +1657,16 @@ public class StreamFragment extends Fragment {
             mChatOnlySelector.setVisibility(View.VISIBLE);
         }
 
+        // Audio Only is currently broken, so let's not show it
+        mAudioOnlySelector.setVisibility(View.GONE);
+        /*
         mAudioOnlySelector.setVisibility(View.VISIBLE);
         mAudioOnlySelector.setOnClickListener(view -> {
             mQualityBottomSheet.dismiss();
             audioOnlyClicked();
         });
+        */
+
         mChatOnlySelector.setOnClickListener(view -> {
             mQualityBottomSheet.dismiss();
             chatOnlyClicked();
@@ -1779,7 +1765,7 @@ public class StreamFragment extends Fragment {
             mControlToolbar.setVisibility(View.GONE);
             mToolbar.setBackgroundColor(Service.getColorAttribute(R.attr.colorPrimary, R.color.primary, getContext()));
 
-            mVideoView.stopPlayback();
+            player.release();
             optionsMenuItem.setVisible(true);
 
             showVideoInterface();
@@ -1873,8 +1859,9 @@ public class StreamFragment extends Fragment {
         mQualityWrapper.setVisibility(View.GONE);
     }
 
-    public interface OnSeekListener {
+    public interface StreamFragmentListener {
         void onSeek();
+        void refreshLayout();
     }
 
     /**
@@ -1887,7 +1874,7 @@ public class StreamFragment extends Fragment {
                 int state = intent.getIntExtra("state", -1);
                 switch (state) {
                     case 0:
-                        if (mVideoView.isPlaying()) {
+                        if (player.isPlaying()) {
                             Log.d(LOG_TAG, "Chat, pausing from headsetPlug");
                             showVideoInterface();
                             pauseStream();

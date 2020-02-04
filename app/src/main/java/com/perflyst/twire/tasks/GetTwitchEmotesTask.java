@@ -2,6 +2,7 @@ package com.perflyst.twire.tasks;
 
 import android.content.Context;
 import android.os.AsyncTask;
+import android.text.Html;
 import android.util.Log;
 
 import com.perflyst.twire.model.Emote;
@@ -55,7 +56,7 @@ public class GetTwitchEmotesTask extends AsyncTask<Void, Void, Void> {
                         String id = emoteObject.getInt(ID_KEY_INT) + "";
                         String WORD_KEY_STRING = "code";
                         String word = emoteObject.getString(WORD_KEY_STRING);
-                        Emote emote = new Emote(id, word, false);
+                        Emote emote = Emote.Twitch(word, id);
                         emote.setSubscriberEmote(true);
                         subscriberEmotes.add(emote);
                     }
@@ -64,18 +65,21 @@ public class GetTwitchEmotesTask extends AsyncTask<Void, Void, Void> {
             Log.d(LOG_TAG, newUrl);
 
 
-            String url = "https://twitchemotes.com/api_cache/v3/global.json";
-            JSONObject emotesObject = new JSONObject(Service.urlToJSONString(url));
-            Iterator<?> keys = emotesObject.keys();
+            String url = "https://api.twitchemotes.com/api/v4/channels/0";
+            JSONArray emotesArray = new JSONObject(Service.urlToJSONString(url)).getJSONArray("emotes");
 
-            while (keys.hasNext()) {
-                String key = (String) keys.next();
-                if (emotesObject.get(key) instanceof JSONObject) {
-                    JSONObject emoteObject = emotesObject.getJSONObject(key);
+            for (int i = 0; i < emotesArray.length(); i++) {
+                JSONObject emoteObject = emotesArray.getJSONObject(i);
+                String code = emoteObject.getString("code");
 
-                    String emoteId = "" + emoteObject.getInt("id");
-                    twitchEmotes.add(new Emote(emoteId, key, false));
-                }
+                // code is a escaped regex, so we need to convert it to any valid match for that regex
+                code = Html.fromHtml(code.replaceAll("\\\\", "")).toString()
+                        .replaceAll("(.)\\?", "")
+                        .replaceAll("\\[(.).*?\\]", "$1")
+                        .replaceAll("\\((.+)\\|.+\\)", "$1");
+
+                String emoteId = "" + emoteObject.getInt("id");
+                twitchEmotes.add(Emote.Twitch(code, emoteId));
             }
         } catch (JSONException e) {
             e.printStackTrace();

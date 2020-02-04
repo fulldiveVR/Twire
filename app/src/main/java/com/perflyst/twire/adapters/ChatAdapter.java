@@ -14,6 +14,7 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
 import android.util.Log;
+import android.util.Patterns;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -26,8 +27,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.perflyst.twire.R;
 import com.perflyst.twire.misc.GlideImageSpan;
+import com.perflyst.twire.model.Badge;
 import com.perflyst.twire.model.ChatEmote;
 import com.perflyst.twire.model.ChatMessage;
+import com.perflyst.twire.model.Emote;
 import com.perflyst.twire.service.Service;
 import com.perflyst.twire.service.Settings;
 import com.perflyst.twire.views.recyclerviews.ChatRecyclerView;
@@ -36,7 +39,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Created by SebastianRask on 03-03-2016.
@@ -47,7 +49,6 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ContactViewHol
     private ChatRecyclerView mRecyclerView;
     private Activity context;
     private Settings settings;
-    private Pattern linkPattern;
     private ChatAdapterCallback mCallback;
     private boolean isNightTheme;
 
@@ -57,7 +58,6 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ContactViewHol
         context = aContext;
         mCallback = aCallback;
         settings = new Settings(context);
-        linkPattern = Pattern.compile("((http|https|ftp)://[a-zA-Z0-9\\-.]+\\.[a-zA-Z]{2,3}(:[a-zA-Z0-9]*)?/?([a-zA-Z0\u200C123456789\\-._?,'/\\\\+&amp;%$#=~])*[^.,)(\\s])");
 
         isNightTheme = settings.getTheme().equals(context.getString(R.string.night_theme_name)) || settings.getTheme().equals(context.getString(R.string.true_night_theme_name));
     }
@@ -91,14 +91,14 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ContactViewHol
                 Log.d(LOG_TAG, "Message: " + message.toString());
             }
 
-            final SpannableStringBuilder builder = new SpannableStringBuilder();
-            for (String badgeUrl : message.getBadges()) {
-                final GlideImageSpan badgeSpan = new GlideImageSpan(context, badgeUrl, holder.message, builder, 36);
-                AppendSpan(builder, "  ", badgeSpan).append(" ");
-            }
-
             if (message.getName() == null) {
                 return;
+            }
+
+            final SpannableStringBuilder builder = new SpannableStringBuilder();
+            for (Badge badge : message.getBadges()) {
+                final GlideImageSpan badgeSpan = new GlideImageSpan(context, badge.getUrl(2), holder.message, builder, 36, 1, badge.color);
+                AppendSpan(builder, "  ", badgeSpan).append(" ");
             }
 
             int nameColor = getNameColor(message.getColor());
@@ -111,16 +111,16 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ContactViewHol
 
             checkForLink(builder.toString(), builder);
 
-            for (ChatEmote emote : message.getEmotes()) {
-                for (String emotePosition : emote.getEmotePositions()) {
-                    String[] toAndFrom = emotePosition.split("-");
-                    final int fromPosition = Integer.parseInt(toAndFrom[0]) + preLength;
-                    final int toPosition = Integer.parseInt(toAndFrom[1]) + preLength;
+            for (ChatEmote chatEmote : message.getEmotes()) {
+                for (Integer emotePosition : chatEmote.getPositions()) {
+                    final Emote emote = chatEmote.getEmote();
+                    final int fromPosition = emotePosition + preLength;
+                    final int toPosition = emotePosition + emote.getKeyword().length() - 1 + preLength;
 
                     int emoteSize = settings.getEmoteSize();
                     int emotePixels = emoteSize == 1 ? 28 : emoteSize == 2 ? 56 : 112;
 
-                    final GlideImageSpan emoteSpan = new GlideImageSpan(context, emote.getEmoteUrl(), holder.message, builder, emotePixels);
+                    final GlideImageSpan emoteSpan = new GlideImageSpan(context, emote.getEmoteUrl(emoteSize), holder.message, builder, emotePixels, (float) emote.getBestAvailableSize(emoteSize) / emoteSize);
 
                     holder.message.setTextIsSelectable(true);
 
@@ -162,7 +162,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.ContactViewHol
     }
 
     private void checkForLink(String message, SpannableStringBuilder spanbuilder) {
-        Matcher linkMatcher = linkPattern.matcher(message);
+        Matcher linkMatcher = Patterns.WEB_URL.matcher(message);
         while (linkMatcher.find()) {
             final String url = linkMatcher.group(1);
 

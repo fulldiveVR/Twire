@@ -9,7 +9,9 @@ import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.SparseArray;
 
+import com.perflyst.twire.model.Badge;
 import com.perflyst.twire.model.ChatEmote;
 import com.perflyst.twire.model.ChatMessage;
 import com.perflyst.twire.model.Emote;
@@ -31,6 +33,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -51,7 +54,7 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
     private Handler callbackHandler;
     private boolean isStopping;
     private String user;
-    private String oauth_key;
+    private String password;
     private String channelName;
     private String hashChannel;
     private int channelUserId;
@@ -67,14 +70,30 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
     private boolean chatIsSubsonlymode;
     private ChatEmoteManager mEmoteManager;
 
-    private Map<String, Map<String, String>> globalBadges = new HashMap<>();
-    private Map<String, Map<String, String>> channelBadges = new HashMap<>();
+    private Map<String, Map<String, Badge>> globalBadges = new HashMap<>();
+    private Map<String, Map<String, Badge>> channelBadges = new HashMap<>();
+    public static List<Badge> ffzBadges = new ArrayList<>();
 
     public ChatManager(Context aContext, String aChannel, int aChannelUserId, String aVodId, ChatCallback aCallback) {
-        mEmoteManager = new ChatEmoteManager(aChannel, aContext);
+        mEmoteManager = new ChatEmoteManager(aChannel);
         Settings appSettings = new Settings(aContext);
-        user = appSettings.getGeneralTwitchName();
-        oauth_key = "oauth:" + appSettings.getGeneralTwitchAccessToken();
+
+        if(appSettings.isLoggedIn()) { // if user is logged in ...
+            // ... use their credentials
+            Log.d(LOG_TAG, "Using user credentials for chat login.");
+
+            user = appSettings.getGeneralTwitchName();
+            password = "oauth:" + appSettings.getGeneralTwitchAccessToken();
+        }
+        else
+        {
+            // ... else: use anonymous credentials
+            Log.d(LOG_TAG, "Using anonymous credentials for chat login.");
+
+            user = "justinfan" + getRandomNumber(10000, 99999);
+            password = "SCHMOOPIIE";
+        }
+
         hashChannel = "#" + aChannel;
         channelName = aChannel;
         channelUserId = aChannelUserId;
@@ -98,10 +117,11 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
     @Override
     protected Void doInBackground(Void... params) {
         Log.d(LOG_TAG, "Trying to start chat " + hashChannel + " for user " + user);
-        mEmoteManager.loadBttvEmotes(() -> onProgressUpdate(new ProgressUpdate(ProgressUpdate.UpdateType.ON_BTTV_FETCHED)));
+        mEmoteManager.loadCustomEmotes(() -> onProgressUpdate(new ProgressUpdate(ProgressUpdate.UpdateType.ON_CUSTOM_EMOTES_FETCHED)));
 
         readBadges("https://badges.twitch.tv/v1/badges/global/display", globalBadges);
         readBadges("https://badges.twitch.tv/v1/badges/channels/" + channelUserId + "/display", channelBadges);
+        readFFZBadges();
 
         if (vodId == null) {
             ChatProperties properties = fetchChatProperties();
@@ -145,9 +165,9 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
                 case ON_ROOMSTATE_CHANGE:
                     callback.onRoomstateChange(chatIsR9kmode, chatIsSlowmode, chatIsSubsonlymode);
                     break;
-                case ON_BTTV_FETCHED:
-                    callback.onBttvEmoteIdFetched(
-                            mEmoteManager.getChanncelBttvEmotes(), mEmoteManager.getGlobalBttvEmotes()
+                case ON_CUSTOM_EMOTES_FETCHED:
+                    callback.onCustomEmoteIdFetched(
+                            mEmoteManager.getChannelCustomEmotes(), mEmoteManager.getGlobalCustomEmotes()
                     );
                     break;
             }
@@ -175,7 +195,7 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
             writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
             BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-            writer.write("PASS " + oauth_key + "\r\n");
+            writer.write("PASS " + password + "\r\n");
             writer.write("NICK " + user + "\r\n");
             writer.write("USER " + user + " \r\n");
             writer.flush();
@@ -299,14 +319,16 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
                             JSONArray emoticonsArray = message.getJSONArray("emoticons");
                             for (int j = 0; j < emoticonsArray.length(); j++) {
                                 JSONObject emoticon = emoticonsArray.getJSONObject(j);
-                                emotes.add(new ChatEmote(new String[]{emoticon.getString("begin") + "-" + emoticon.getString("end")}, getEmoteFromId(emoticon.getString("_id"), false)));
+                                int begin = emoticon.getInt("begin");
+                                String keyword = body.substring(begin, emoticon.getInt("end") + 1);
+                                emotes.add(new ChatEmote(Emote.Twitch(keyword, emoticon.getString("_id")), new int[] { begin }));
                             }
                         }
-                        emotes.addAll(mEmoteManager.findBttvEmotes(body));
+                        emotes.addAll(mEmoteManager.findCustomEmotes(body));
 
                         //Pattern.compile(Pattern.quote(userDisplayName), Pattern.CASE_INSENSITIVE).matcher(message).find();
 
-                        ChatMessage chatMessage = new ChatMessage(body, displayName, color, getBadgeUrls(badges), emotes, false);
+                        ChatMessage chatMessage = new ChatMessage(body, displayName, color, getBadges(badges), emotes, false);
                         publishProgress(new ProgressUpdate(ProgressUpdate.UpdateType.ON_MESSAGE, chatMessage));
 
                         downloadedComments.remove(i);
@@ -409,7 +431,6 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
      */
     private void handleMessage(String line) {
         Matcher stdVarMatcher = stdVarPattern.matcher(line);
-        List<ChatEmote> emotes = new ArrayList<>(mEmoteManager.findTwitchEmotes(line));
 
         if (stdVarMatcher.find()) {
             Map<String, String> badges = new HashMap<>();
@@ -422,10 +443,11 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
             String color = stdVarMatcher.group(2);
             String displayName = stdVarMatcher.group(3);
             String message = stdVarMatcher.group(4);
-            emotes.addAll(mEmoteManager.findBttvEmotes(message));
+            List<ChatEmote> emotes = new ArrayList<>(mEmoteManager.findTwitchEmotes(line, message));
+            emotes.addAll(mEmoteManager.findCustomEmotes(message));
             //Pattern.compile(Pattern.quote(userDisplayName), Pattern.CASE_INSENSITIVE).matcher(message).find();
 
-            ChatMessage chatMessage = new ChatMessage(message, displayName, color, getBadgeUrls(badges), emotes, false);
+            ChatMessage chatMessage = new ChatMessage(message, displayName, color, getBadges(badges), emotes, false);
             publishProgress(new ProgressUpdate(ProgressUpdate.UpdateType.ON_MESSAGE, chatMessage));
         } else {
             Log.e(LOG_TAG, "Failed to find message pattern in: \n" + line);
@@ -486,14 +508,6 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
     }
 
     /**
-     * Returns a URL of the emote with the specified emote id.
-     * If the emote has not been cached from an earlier download the method
-     */
-    public String getEmoteFromId(String emoteId, boolean isBttvEmote) {
-        return mEmoteManager.getEmoteFromId(emoteId, isBttvEmote);
-    }
-
-    /**
      * Fetches the chat properties from Twitch.
      * Should never be called on the UI thread.
      *
@@ -530,21 +544,56 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
         return null;
     }
 
-    void readBadges(String url, Map<String, Map<String, String>> badgeMap) {
+    void readBadges(String url, Map<String, Map<String, Badge>> badgeMap) {
         try {
             JSONObject globalBadgeSets = new JSONObject(Service.urlToJSONString(url)).getJSONObject("badge_sets");
             for (Iterator<String> it = globalBadgeSets.keys(); it.hasNext(); ) {
                 String badgeSet = it.next();
-                Map<String, String> versionMap = new HashMap<>();
+                Map<String, Badge> versionMap = new HashMap<>();
 
                 badgeMap.put(badgeSet, versionMap);
 
                 JSONObject versions = globalBadgeSets.getJSONObject(badgeSet).getJSONObject("versions");
                 for (Iterator<String> iter = versions.keys(); iter.hasNext(); ) {
                     String version = iter.next();
+                    JSONObject versionObject = versions.getJSONObject(version);
+                    SparseArray<String> urls = new SparseArray<>();
+                    urls.put(1, versionObject.getString("image_url_1x"));
+                    urls.put(2, versionObject.getString("image_url_2x"));
+                    urls.put(4, versionObject.getString("image_url_4x"));
 
-                    versionMap.put(version, versions.getJSONObject(version).getString("image_url_2x"));
+                    versionMap.put(version, new Badge(badgeSet, urls));
                 }
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    void readFFZBadges() {
+        ffzBadges.clear();
+
+        try {
+            JSONObject topObject = new JSONObject(Service.urlToJSONString("https://api.frankerfacez.com/v1/badges"));
+            JSONArray badges = topObject.getJSONArray("badges");
+            JSONObject users = topObject.getJSONObject("users");
+            for (int badgeIndex = 0; badgeIndex < badges.length(); badgeIndex++) {
+                JSONObject badge = badges.getJSONObject(badgeIndex);
+
+                SparseArray<String> urls = new SparseArray<>();
+                JSONObject urlsObject = badge.getJSONObject("urls");
+                for (Iterator<String> iterator = urlsObject.keys(); iterator.hasNext(); ) {
+                    String size = iterator.next();
+                    urls.put(Integer.parseInt(size), "https:" + urlsObject.getString(size));
+                }
+
+                List<String> emoteUsers = new ArrayList<>();
+                JSONArray badgeUsers = users.getJSONArray(Integer.toString(badgeIndex + 1));
+                for (int userIndex = 0; userIndex < badgeUsers.length(); userIndex++) {
+                    emoteUsers.add(badgeUsers.getString(userIndex));
+                }
+
+                ffzBadges.add(new Badge(badge.getString("name"), urls, badge.getString("color"), badge.isNull("replaces") ? null : badge.getString("replaces"), emoteUsers));
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -563,25 +612,25 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
         return userBadges;
     }
 
-    public String getBadge(String badgeSet, String version) {
-        Map<String, String> channelSet = channelBadges.get(badgeSet);
+    public Badge getBadge(String badgeSet, String version) {
+        Map<String, Badge> channelSet = channelBadges.get(badgeSet);
         if (channelSet != null && channelSet.get(version) != null)
             return channelSet.get(version);
 
-        Map<String, String> globalSet = globalBadges.get(badgeSet);
+        Map<String, Badge> globalSet = globalBadges.get(badgeSet);
         if (globalSet != null && globalSet.get(version) != null)
             return globalSet.get(version);
 
         return null;
     }
 
-    public List<String> getBadgeUrls(Map<String, String> badges) {
-        List<String> badgeUrls = new ArrayList<>();
+    public List<Badge> getBadges(Map<String, String> badges) {
+        List<Badge> badgeObjects = new ArrayList<>();
         for (String badgeSet : badges.keySet()) {
-            badgeUrls.add(getBadge(badgeSet, badges.get(badgeSet)));
+            badgeObjects.add(getBadge(badgeSet, badges.get(badgeSet)));
         }
 
-        return badgeUrls;
+        return badgeObjects;
     }
 
     public interface ChatCallback {
@@ -597,7 +646,7 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
 
         void onRoomstateChange(boolean isR9K, boolean isSlow, boolean isSubsOnly);
 
-        void onBttvEmoteIdFetched(List<Emote> bttvChannel, List<Emote> bttvGlobal);
+        void onCustomEmoteIdFetched(List<Emote> channel, List<Emote> global);
     }
 
     /**
@@ -639,7 +688,12 @@ public class ChatManager extends AsyncTask<Void, ChatManager.ProgressUpdate, Voi
             ON_CONNECTED,
             ON_CONNECTION_FAILED,
             ON_ROOMSTATE_CHANGE,
-            ON_BTTV_FETCHED
+            ON_CUSTOM_EMOTES_FETCHED
         }
     }
+
+    private int getRandomNumber(int min,int max) {
+        return (new Random()).nextInt((max - min) + 1) + min;
+    }
 }
+
