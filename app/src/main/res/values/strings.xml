@@ -3,7 +3,7 @@
     <string name="hello_world">Hello world</string>
     <string name="app_name" translatable="false">CryptoTwitch for Twitch</string>
     <string name="app_slogan"> </string>
-    <string name="app_id" translatable="false">com.fulldive.cryptotwitch</string>
+    <string name="app_id" translatable="false">stream.twitch.prime.twitch.streaming.twitch.chat.earn.cash</string>
 
     <string name="ok">OK</string>
     <string name="done">DONE</string>
